@@ -569,57 +569,56 @@ static NSString *JSTQuotedStringAttributeName = @"JSTQuotedString";
             return;
         }
     }
-    else {
-        NSRange charRange = [self rangeForUserTextChange];
-        if (charRange.location != NSNotFound) {
-            if (charRange.length > 0) {
-                // Non-zero selection.  Delete normally.
+
+    NSRange charRange = [self rangeForUserTextChange];
+    if (charRange.location != NSNotFound) {
+        if (charRange.length > 0) {
+            // Non-zero selection.  Delete normally.
+            [super deleteBackward:sender];
+        } else {
+            if (charRange.location == 0) {
+                // At beginning of text.  Delete normally.
                 [super deleteBackward:sender];
             } else {
-                if (charRange.location == 0) {
-                    // At beginning of text.  Delete normally.
+                NSString *string = [self string];
+                NSRange paraRange = [string lineRangeForRange:NSMakeRange(charRange.location - 1, 1)];
+                if (paraRange.location == charRange.location) {
+                    // At beginning of line.  Delete normally.
                     [super deleteBackward:sender];
                 } else {
-                    NSString *string = [self string];
-                    NSRange paraRange = [string lineRangeForRange:NSMakeRange(charRange.location - 1, 1)];
-                    if (paraRange.location == charRange.location) {
-                        // At beginning of line.  Delete normally.
+                    unsigned tabWidth = 4; //[[TEPreferencesController sharedPreferencesController] tabWidth];
+                    unsigned indentWidth = 4;// [[TEPreferencesController sharedPreferencesController] indentWidth];
+                    BOOL usesTabs = NO; //[[TEPreferencesController sharedPreferencesController] usesTabs];
+                    NSRange leadingSpaceRange = paraRange;
+                    unsigned leadingSpaces = TE_numberOfLeadingSpacesFromRangeInString(string, &leadingSpaceRange, tabWidth);
+
+                    if (charRange.location > NSMaxRange(leadingSpaceRange)) {
+                        // Not in leading whitespace.  Delete normally.
                         [super deleteBackward:sender];
                     } else {
-                        unsigned tabWidth = 4; //[[TEPreferencesController sharedPreferencesController] tabWidth];
-                        unsigned indentWidth = 4;// [[TEPreferencesController sharedPreferencesController] indentWidth];
-                        BOOL usesTabs = NO; //[[TEPreferencesController sharedPreferencesController] usesTabs];
-                        NSRange leadingSpaceRange = paraRange;
-                        unsigned leadingSpaces = TE_numberOfLeadingSpacesFromRangeInString(string, &leadingSpaceRange, tabWidth);
-                        
-                        if (charRange.location > NSMaxRange(leadingSpaceRange)) {
-                            // Not in leading whitespace.  Delete normally.
-                            [super deleteBackward:sender];
-                        } else {
-                            NSTextStorage *text = [self textStorage];
-                            unsigned leadingIndents = leadingSpaces / indentWidth;
-                            NSString *replaceString;
-                            
-                            // If we were indented to an fractional level just go back to the last even multiple of indentWidth, if we were exactly on, go back a full level.
-                            if (leadingSpaces % indentWidth == 0) {
-                                leadingIndents--;
+                        NSTextStorage *text = [self textStorage];
+                        unsigned leadingIndents = leadingSpaces / indentWidth;
+                        NSString *replaceString;
+
+                        // If we were indented to an fractional level just go back to the last even multiple of indentWidth, if we were exactly on, go back a full level.
+                        if (leadingSpaces % indentWidth == 0) {
+                            leadingIndents--;
+                        }
+                        leadingSpaces = leadingIndents * indentWidth;
+                        replaceString = ((leadingSpaces > 0) ? TE_tabbifiedStringWithNumberOfSpaces(leadingSpaces, tabWidth, usesTabs) : @"");
+                        if ([self shouldChangeTextInRange:leadingSpaceRange replacementString:replaceString]) {
+                            NSDictionary *newTypingAttributes;
+                            if (charRange.location < [string length]) {
+                                newTypingAttributes = [text attributesAtIndex:charRange.location effectiveRange:NULL];
+                            } else {
+                                newTypingAttributes = [text attributesAtIndex:(charRange.location - 1) effectiveRange:NULL];
                             }
-                            leadingSpaces = leadingIndents * indentWidth;
-                            replaceString = ((leadingSpaces > 0) ? TE_tabbifiedStringWithNumberOfSpaces(leadingSpaces, tabWidth, usesTabs) : @"");
-                            if ([self shouldChangeTextInRange:leadingSpaceRange replacementString:replaceString]) {
-                                NSDictionary *newTypingAttributes;
-                                if (charRange.location < [string length]) {
-                                    newTypingAttributes = [text attributesAtIndex:charRange.location effectiveRange:NULL];
-                                } else {
-                                    newTypingAttributes = [text attributesAtIndex:(charRange.location - 1) effectiveRange:NULL];
-                                }
-                                
-                                [text replaceCharactersInRange:leadingSpaceRange withString:replaceString];
-                                
-                                [self setTypingAttributes:newTypingAttributes];
-                                
-                                [self didChangeText];
-                            }
+
+                            [text replaceCharactersInRange:leadingSpaceRange withString:replaceString];
+
+                            [self setTypingAttributes:newTypingAttributes];
+
+                            [self didChangeText];
                         }
                     }
                 }
