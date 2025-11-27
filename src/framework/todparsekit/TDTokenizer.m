@@ -71,7 +71,7 @@
         [self addTokenizerState:symbolState     from:  58 to:  64];
         [self addTokenizerState:wordState       from: 'A' to: 'Z']; // From: 65 to: 90    From:0x41 to:0x5A
         [self addTokenizerState:symbolState     from:  91 to:  95];
-        [self addTokenizerState:quoteState      from:'`'  to: '`']; // From: 96 to: 96    From:0x60 to:0x60
+        [self addTokenizerState:quoteState      from: '`' to: '`']; // From: 96 to: 96    From:0x60 to:0x60
         [self addTokenizerState:wordState       from: 'a' to: 'z']; // From: 97 to:122    From:0x61 to:0x7A
         [self addTokenizerState:symbolState     from: 123 to: 191];
         [self addTokenizerState:wordState       from:0xC0 to:0xFF]; // From:192 to:255    From:0xC0 to:0xFF
