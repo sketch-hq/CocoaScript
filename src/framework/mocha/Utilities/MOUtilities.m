@@ -369,7 +369,66 @@ JSValueRef _MOFunctionInvoke(id function, JSContextRef ctx, size_t argumentCount
             encoding = [[[target methodSignatureForSelector: selector] typeEncoding] cStringUsingEncoding: NSASCIIStringEncoding];
         if (encoding)
             argumentEncodings = [MOParseObjCMethodEncoding(encoding) mutableCopy];
-        
+
+        // Certain Objective-C methods accept and/or return anonymous C structs. When querying the
+        // type signature for such methods, the runtime will report "?" as a struct type name, preventing
+        // us from fetching its Bridge Support definition that's necessary to figure out the struct layout.
+        // As a workaround, we fetch a Bridge Support entry for the entire method instead, and take
+        // the non-anonymized struct type definition directly from there.
+        __auto_type bridgeSupport = ^MOBridgeSupportMethod *_Nullable(void) {
+            MOBridgeSupportController *bridgeController = [MOBridgeSupportController sharedController];
+            MOBridgeSupportClass *classDefinition = [bridgeController performQueryForSymbolName:NSStringFromClass(klass)];
+            if (!classDefinition && [NSStringFromClass(klass) hasPrefix:@"_NSSwift"]) {
+                // Apple has been re-implementing certain Foundation classes in Swift without updating
+                // the corresponding Bridge Support files that still mention the original class name
+                NSString *baseClassName = [NSStringFromClass(klass) stringByReplacingOccurrencesOfString:@"_NSSwift" withString:@"NS"];
+                classDefinition = [bridgeController performQueryForSymbolName:baseClassName];
+            }
+            return [classDefinition methodWithSelector:selector];
+        }();
+        [argumentEncodings enumerateObjectsUsingBlock:^(MOFunctionArgument *argument, NSUInteger idx, BOOL *stop) {
+            if (bridgeSupport == nil) {
+                return;
+            }
+            if (idx == 1 || idx == 2) {
+                // Skip the implicit `self` and `selector` arguments
+                return;
+            }
+            if (argument.typeEncoding != _C_STRUCT_B) {
+                // Skip arguments that aren't C structs
+                return;
+            }
+
+            NSString *runtimeStructName = [MOFunctionArgument structureNameFromStructureTypeEncoding:argument.structureTypeEncoding];
+            if (![runtimeStructName isEqualToString:@"?"]) {
+                // The struct type name is not missing, so nothing to fix; skip it
+                return;
+            }
+
+            __auto_type fixedArgument = ^MOBridgeSupportArgument *_Nullable(void) {
+                if (idx == 0) {
+                    // The first argument is actually a return value
+                    return bridgeSupport.returnValue;
+                }
+                // As bridge support files may not contain definitions for every argument of a
+                // method, we rely on the `index` property there to find the one we need
+                NSInteger explicitArgumentIndex = idx - 3;
+                NSUInteger match = [bridgeSupport.arguments indexOfObjectPassingTest:^BOOL(MOBridgeSupportArgument *candidate, NSUInteger _, BOOL *__) {
+                    return candidate.index == explicitArgumentIndex;
+                }];
+                if (match == NSNotFound) {
+                    // The required argument definition is not in the bridge support file
+                    return nil;
+                }
+                return bridgeSupport.arguments[match];
+            }();
+            NSString *fixedStructureTypeEncoding = fixedArgument.type64 ?: fixedArgument.type;
+            if (fixedStructureTypeEncoding == nil) {
+                return;
+            }
+            [argument setStructureTypeEncoding:fixedStructureTypeEncoding];
+        }];
+
         if (argumentEncodings == nil) {
             NSException *e = [NSException exceptionWithName:MORuntimeException reason:[NSString stringWithFormat:@"Unable to parse method encoding for method %@ of class %@", NSStringFromSelector(selector), klass] userInfo:nil];
             if (exception != NULL) {
