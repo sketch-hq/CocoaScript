@@ -115,7 +115,6 @@
         [type isEqualToString:@"long"]        ||
         [type isEqualToString:@"NSInteger"]   ||
         [type isEqualToString:@"NSUInteger"]  ||
-        [type isEqualToString:@"id"]          ||
         [type isEqualToString:@"bool"]        ||
         [type isEqualToString:@"BOOL"]        ||
         [type isEqualToString:@"int"])
